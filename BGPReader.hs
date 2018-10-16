@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module BGPReader(readRib,bgpReader,readGroupedRib,pathReadRib) where
+module BGPReader(updateRib,readRib,bgpReader,readGroupedRib,pathReadRib) where
 import System.IO
 import System.Exit(die)
 import System.Environment(getArgs)
@@ -13,6 +13,8 @@ import PathFilter
 
 bgpReader :: FilePath -> IO [(BGPRib.RouteData, BGPlib.Prefix)]
 bgpReader path = do
+    -- TODO - this looks a lot like Data.ByteString.Lazy.readFile !!!
+    --        replace?
     handle <- openBinaryFile path ReadMode
     stream <- L.hGetContents handle
     let bgpByteStrings = runGet getBGPByteStrings stream
