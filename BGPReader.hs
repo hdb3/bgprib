@@ -1,6 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module BGPReader(updateRib,readRib,bgpReader,readGroupedRib,pathReadRib) where
-import System.IO
+module BGPReader(updateRib,readMsgs,readRib,bgpMsgReader,bgpReader,readGroupedRib,pathReadRib) where
 import System.Exit(die)
 import System.Environment(getArgs)
 import qualified Data.ByteString.Lazy as L
@@ -11,22 +10,26 @@ import BGPRib
 import BogonFilter
 import PathFilter
 
-bgpReader :: FilePath -> IO [(BGPRib.RouteData, BGPlib.Prefix)]
-bgpReader path = do
-    -- TODO - this looks a lot like Data.ByteString.Lazy.readFile !!!
-    --        replace?
-    handle <- openBinaryFile path ReadMode
-    stream <- L.hGetContents handle
+bgpMsgReader :: FilePath -> IO [BGPMessage]
+bgpMsgReader path = do
+    stream <- L.readFile path
     let bgpByteStrings = runGet getBGPByteStrings stream
         bgpMessages = map decodeBGPByteString bgpByteStrings
         updates = map getUpdate $ filter isUpdate bgpMessages
+    return bgpMessages
+
+bgpUpdateMsgReader :: FilePath -> IO [ParsedUpdate]
+bgpUpdateMsgReader = fmap ( map getUpdate . filter isUpdate ) . bgpMsgReader
+
+bgpReader :: FilePath -> IO [(BGPRib.RouteData, BGPlib.Prefix)]
+bgpReader path = do
+    updates <- bgpUpdateMsgReader path
     rib <- BGPRib.newRib BGPRib.dummyPeerData
     mapM_ (updateRib rib) updates
     rib' <- BGPRib.getLocRib rib
     return (getRIB rib')
 
-updateRib rib parsedUpdate@ParsedUpdate{..} = do
-                BGPRib.ribUpdater rib BGPRib.dummyPeerData parsedUpdate
+updateRib rib parsedUpdate@ParsedUpdate{..} = BGPRib.ribUpdater rib BGPRib.dummyPeerData parsedUpdate
 
 -- readRib: a convenience function for simple applications
 -- the returned structure masks only derived or artificial data
@@ -45,8 +48,20 @@ readGroupedRib = do rawRib <- readRib'
                     return $ map normalise $ applyBogonFilter $ groupBy_ rawRib
 pathReadRib :: FilePath -> IO [((Int, [PathAttribute]), [BGPlib.Prefix])]
 pathReadRib path = fmap ( applyPathFilter . map normalise . applyBogonFilter . groupBy_ ) ( bgpReader path)
---pathReadRib path = bgpReader path >>= map normalise . applyBogonFilter . groupBy_
 
+readMsgs = do
+    args <- getArgs
+    let n = if 1 < length args then read (args !! 1) :: Int else 0
+    if null args then
+        die "no filename specified"
+    else do
+        msgs <- bgpMsgReader (args !! 0)
+        if n == 0 then
+            return msgs
+        else
+            return (take n msgs)
+
+-- TODO convert the readrib chain to use readMsgs.....
 readRib' = do
     args <- getArgs
     let n = if 1 < length args then read (args !! 1) :: Int else 0
