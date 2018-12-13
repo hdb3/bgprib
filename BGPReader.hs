@@ -15,7 +15,6 @@ bgpMsgReader path = do
     stream <- L.readFile path
     let bgpByteStrings = runGet getBGPByteStrings stream
         bgpMessages = map decodeBGPByteString bgpByteStrings
-        updates = map getUpdate $ filter isUpdate bgpMessages
     return bgpMessages
 
 bgpUpdateMsgReader :: FilePath -> IO [ParsedUpdate]
@@ -28,7 +27,7 @@ bgpReader path = do
     mapM_ (updateRib rib) updates
     rib' <- BGPRib.getLocRib rib
     return (getRIB rib')
-
+updateRib :: Rib -> ParsedUpdate -> IO ()
 updateRib rib parsedUpdate@ParsedUpdate{..} = BGPRib.ribUpdater rib BGPRib.dummyPeerData parsedUpdate
 
 -- readRib: a convenience function for simple applications
@@ -40,8 +39,9 @@ updateRib rib parsedUpdate@ParsedUpdate{..} = BGPRib.ribUpdater rib BGPRib.dummy
 
 readRib :: IO [((Int, [PathAttribute]), BGPlib.Prefix)]
 readRib = readUngroupedRib
-readUngroupedRib = do rawRib <- readRib' 
-                      return $ map normalise $ filter (bogonFilter . snd) rawRib
+
+readUngroupedRib :: IO [((Int, [PathAttribute]), Prefix)]
+readUngroupedRib = fmap ( map normalise . filter (bogonFilter . snd) ) readRib' 
 
 readGroupedRib :: IO [((Int, [PathAttribute]), [BGPlib.Prefix])]
 readGroupedRib = do rawRib <- readRib' 
@@ -49,6 +49,7 @@ readGroupedRib = do rawRib <- readRib'
 pathReadRib :: FilePath -> IO [((Int, [PathAttribute]), [BGPlib.Prefix])]
 pathReadRib path = fmap ( applyPathFilter . map normalise . applyBogonFilter . groupBy_ ) ( bgpReader path)
 
+readMsgs :: IO [BGPMessage]
 readMsgs = do
     args <- getArgs
     let n = if 1 < length args then read (args !! 1) :: Int else 0
@@ -62,6 +63,7 @@ readMsgs = do
             return (take n msgs)
 
 -- TODO convert the readrib chain to use readMsgs.....
+readRib' :: IO [(RouteData, Prefix)]
 readRib' = do
     args <- getArgs
     let n = if 1 < length args then read (args !! 1) :: Int else 0
@@ -74,4 +76,5 @@ readRib' = do
         else
             return (take n rib)
 
+normalise :: (RouteData, t) -> ((Int, [PathAttribute]), t)
 normalise (routeData,a) = ((BGPRib.routeId routeData , BGPRib.pathAttributes routeData) , a)
