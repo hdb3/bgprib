@@ -12,4 +12,4 @@ toHex = C8.unpack . Base16.encode
 toHex' = toHex . L.toStrict
 
 groupBy_ :: (Eq k,Hashable k) => [(k, a)] -> [(k, [a])]
-groupBy_ t = Data.HashMap.Strict.toList $ Data.HashMap.Strict.fromListWith (++) $ Prelude.map (\(a,b) -> (a,[b])) t
+groupBy_ = Data.HashMap.Strict.toList . Data.HashMap.Strict.fromListWith (++) . Prelude.map (\(a,b) -> (a,[b]))

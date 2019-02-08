@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module BGPReader(updateRib,readMsgs,readRib,bgpMsgReader,bgpReader,readGroupedRib,pathReadRib) where
+module BGPReader(updateRib,readMsgs,readRib,bgpMsgReader,bgpReader,readGroupedRibF,readGroupedRib,pathReadRib) where
 import System.Exit(die)
 import System.Environment(getArgs)
 import qualified Data.ByteString.Lazy as L
@@ -20,7 +20,7 @@ bgpMsgReader path = do
 bgpUpdateMsgReader :: FilePath -> IO [ParsedUpdate]
 bgpUpdateMsgReader = fmap ( map getUpdate . filter isUpdate ) . bgpMsgReader
 
-bgpReader :: FilePath -> IO [(BGPRib.RouteData, BGPlib.Prefix)]
+bgpReader :: FilePath -> IO [(BGPRib.RouteData, Prefix)]
 bgpReader path = do
     updates <- bgpUpdateMsgReader path
     rib <- BGPRib.newRib BGPRib.dummyPeerData
@@ -37,16 +37,22 @@ updateRib rib parsedUpdate@ParsedUpdate{..} = BGPRib.ribUpdater rib BGPRib.dummy
 --  However, it only contains the last version of the table, so earlier updates in the stream which were superceded are not returned
 
 
-readRib :: IO [((Int, [PathAttribute]), BGPlib.Prefix)]
+readRib :: IO [((Int, [PathAttribute]), Prefix)]
 readRib = readUngroupedRib
 
 readUngroupedRib :: IO [((Int, [PathAttribute]), Prefix)]
-readUngroupedRib = fmap ( map normalise . filter (bogonFilter . snd) ) readRib' 
+readUngroupedRib = fmap ( map normalise ) readRib' 
 
-readGroupedRib :: IO [((Int, [PathAttribute]), [BGPlib.Prefix])]
-readGroupedRib = do rawRib <- readRib' 
-                    return $ map normalise $ applyBogonFilter $ groupBy_ rawRib
-pathReadRib :: FilePath -> IO [((Int, [PathAttribute]), [BGPlib.Prefix])]
+readUngroupedRibF :: IO [((Int, [PathAttribute]), Prefix)]
+readUngroupedRibF = fmap ( filter (bogonFilter . snd) ) readUngroupedRib
+
+readGroupedRib :: IO [((Int, [PathAttribute]), [Prefix])]
+readGroupedRib = fmap (map normalise . applyBogonFilter . groupBy_) readRib'
+
+readGroupedRibF :: IO [((Int, [PathAttribute]), [Prefix])]
+readGroupedRibF = fmap applyBogonFilter readGroupedRib
+
+pathReadRib :: FilePath -> IO [((Int, [PathAttribute]), [Prefix])]
 pathReadRib path = fmap ( applyPathFilter . map normalise . applyBogonFilter . groupBy_ ) ( bgpReader path)
 
 readMsgs :: IO [BGPMessage]
